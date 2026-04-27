@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive WebGL Cloth Poster Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --panel-bg: rgba(17, 20, 25, 0.82);
+      --panel-border: rgba(255, 255, 255, 0.12);
+      --accent: #ff7a00;
+      --text: #eef2ff;
+      --muted: #9aa3b2;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at 30% 20%, #2c313c, #0f1118 58%);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+    }
+    #app {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    #ui {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      width: min(320px, calc(100vw - 32px));
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 20px 44px rgba(0, 0, 0, 0.4);
+      padding: 14px;
+      z-index: 10;
+    }
+    #ui h1 {
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+      line-height: 1.2;
+    }
+    #ui p {
+      margin: 0 0 12px;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin: 10px 0 6px;
+      align-items: center;
+      font-size: 0.84rem;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+    .btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    button {
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: 0.2s ease;
+      font-weight: 600;
+      font-size: 0.82rem;
+    }
+    button:hover { background: rgba(255, 255, 255, 0.13); }
+    #hint {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      background: rgba(6, 8, 12, 0.62);
+      border: 1px solid var(--panel-border);
+      border-radius: 11px;
+      padding: 8px 10px;
+      font-size: 0.8rem;
+      color: #c3cad8;
+      z-index: 10;
+      max-width: min(380px, calc(100vw - 32px));
+    }
+    #status {
+      color: #f8d7bc;
+      font-size: 0.8rem;
+      margin-top: 8px;
+      min-height: 1.1em;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <section id="ui">
+    <h1>WebGL Cloth Poster Simulation</h1>
+    <p>Drag the cloth directly. Pull hard to create folds and flutter under wind turbulence.</p>
+
+    <div class="row"><label for="wind">Wind</label><span id="windVal">1.20</span></div>
+    <input id="wind" type="range" min="0" max="3" value="1.2" step="0.01">
+
+    <div class="row"><label for="turbulence">Turbulence</label><span id="turbulenceVal">0.85</span></div>
+    <input id="turbulence" type="range" min="0" max="2" value="0.85" step="0.01">
+
+    <div class="row"><label for="stiffness">Stiffness</label><span id="stiffnessVal">0.90</span></div>
+    <input id="stiffness" type="range" min="0.2" max="1.8" value="0.9" step="0.01">
+
+    <div class="row"><label for="damping">Damping</label><span id="dampingVal">0.985</span></div>
+    <input id="damping" type="range" min="0.92" max="0.999" value="0.985" step="0.001">
+
+    <div class="btns">
+      <button id="resetBtn">Reset Cloth</button>
+      <button id="pinBtn">Toggle Corner Pins</button>
+      <button id="wireBtn">Toggle Wireframe</button>
+    </div>
+    <div id="status"></div>
+  </section>
+
+  <div id="hint">Tip: Click and drag the poster to grab vertices. Scroll to zoom and orbit to inspect folds.</div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.162.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.162.0/examples/jsm/controls/OrbitControls.js';
+
+    const app = document.getElementById('app');
+    const statusEl = document.getElementById('status');
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0d0f14, 0.03);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    app.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(43, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0.1, 0.35, 1.65);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 0.05, 0);
+
+    const hemi = new THREE.HemisphereLight(0xbfd2ff, 0x1f2330, 0.8);
+    scene.add(hemi);
+    const key = new THREE.DirectionalLight(0xfff1d8, 1.4);
+    key.position.set(1.4, 1.6, 1.2);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0x98b8ff, 0.55);
+    fill.position.set(-1.4, 0.4, -0.8);
+    scene.add(fill);
+
+    const bg = new THREE.Mesh(
+      new THREE.PlaneGeometry(6, 6),
+      new THREE.MeshStandardMaterial({ color: 0x171a23, roughness: 0.9, metalness: 0.0 })
+    );
+    bg.position.z = -1.8;
+    scene.add(bg);
+
+    const clothW = 1.15;
+    const clothH = 1.6;
+    const segX = 58;
+    const segY = 80;
+    const gravity = new THREE.Vector3(0, -8.9, 0);
+
+    const params = {
+      wind: 1.2,
+      turbulence: 0.85,
+      stiffness: 0.9,
+      damping: 0.985,
+      pinnedCorners: true,
+      wireframe: false,
+    };
+
+    const uiIds = ['wind', 'turbulence', 'stiffness', 'damping'];
+    for (const id of uiIds) {
+      const el = document.getElementById(id);
+      const out = document.getElementById(id + 'Val');
+      el.addEventListener('input', () => {
+        params[id] = parseFloat(el.value);
+        out.textContent = Number(el.value).toFixed(id === 'damping' ? 3 : 2);
+      });
+    }
+
+    const textureLoader = new THREE.TextureLoader();
+    const tex = textureLoader.load(
+      './backend/uploads/Download_4_d79871bb32134bdf84281631418c3cdb.jpg',
+      () => { statusEl.textContent = ''; },
+      undefined,
+      () => {
+        statusEl.textContent = 'Image file failed to load. Put your image next to this HTML and update texture path.';
+      }
+    );
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+    const clothGeo = new THREE.PlaneGeometry(clothW, clothH, segX, segY);
+    const clothMat = new THREE.MeshPhysicalMaterial({
+      map: tex,
+      side: THREE.DoubleSide,
+      roughness: 0.84,
+      metalness: 0.02,
+      sheen: 0.45,
+      clearcoat: 0.05,
+      clearcoatRoughness: 0.6,
+      wireframe: false,
+    });
+
+    const cloth = new THREE.Mesh(clothGeo, clothMat);
+    cloth.position.y = 0.02;
+    scene.add(cloth);
+
+    const pos = clothGeo.attributes.position;
+    const base = [];
+    const prev = [];
+    const invMass = [];
+    for (let i = 0; i < pos.count; i++) {
+      base.push(new THREE.Vector3().fromBufferAttribute(pos, i));
+      prev.push(new THREE.Vector3().fromBufferAttribute(pos, i));
+      invMass.push(1);
+    }
+
+    const idx = clothGeo.index.array;
+    const edges = new Set();
+    const constraints = [];
+    function pushEdge(a, b) {
+      const k = a < b ? `${a}_${b}` : `${b}_${a}`;
+      if (edges.has(k)) return;
+      edges.add(k);
+      const pa = base[a], pb = base[b];
+      constraints.push({ a, b, rest: pa.distanceTo(pb), bend: false });
+    }
+
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+      pushEdge(a, b); pushEdge(b, c); pushEdge(c, a);
+      constraints.push({ a, b: c, rest: base[a].distanceTo(base[c]), bend: true });
+    }
+
+    const pinIndices = [0, segX, segX * segY, (segX + 1) * (segY + 1) - 1];
+
+    function applyPins() {
+      invMass.fill(1);
+      if (params.pinnedCorners) {
+        pinIndices.forEach(i => invMass[i] = 0);
+      } else {
+        for (let i = 0; i <= segX; i++) invMass[i] = 0;
+      }
+    }
+    applyPins();
+
+    function resetCloth() {
+      for (let i = 0; i < pos.count; i++) {
+        pos.setXYZ(i, base[i].x, base[i].y, base[i].z);
+        prev[i].copy(base[i]);
+      }
+      pos.needsUpdate = true;
+      clothGeo.computeVertexNormals();
+      applyPins();
+    }
+
+    document.getElementById('resetBtn').addEventListener('click', resetCloth);
+    document.getElementById('pinBtn').addEventListener('click', () => {
+      params.pinnedCorners = !params.pinnedCorners;
+      applyPins();
+      statusEl.textContent = params.pinnedCorners ? 'Pinned: corners' : 'Pinned: top edge';
+      setTimeout(() => statusEl.textContent = '', 1400);
+    });
+    document.getElementById('wireBtn').addEventListener('click', () => {
+      params.wireframe = !params.wireframe;
+      clothMat.wireframe = params.wireframe;
+    });
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let dragging = false;
+    let dragPoint = new THREE.Vector3();
+    let draggedIdx = -1;
+
+    function nearestVertex(point) {
+      let best = -1;
+      let bestD = Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        const v = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(cloth.matrixWorld);
+        const d = v.distanceToSquared(point);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      return best;
+    }
+
+    function pointerToNDC(e) {
+      const r = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+      mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+    }
+
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      pointerToNDC(e);
+      raycaster.setFromCamera(mouse, camera);
+      const hit = raycaster.intersectObject(cloth, false)[0];
+      if (!hit) return;
+      dragging = true;
+      dragPoint.copy(hit.point);
+      draggedIdx = nearestVertex(hit.point);
+      controls.enabled = false;
+      renderer.domElement.setPointerCapture(e.pointerId);
+    });
+
+    renderer.domElement.addEventListener('pointermove', (e) => {
+      if (!dragging || draggedIdx < 0) return;
+      pointerToNDC(e);
+      raycaster.setFromCamera(mouse, camera);
+      const dir = raycaster.ray.direction.clone();
+      const t = (dragPoint.z - raycaster.ray.origin.z) / dir.z;
+      dragPoint.copy(raycaster.ray.origin).addScaledVector(dir, t);
+    });
+
+    function stopDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      draggedIdx = -1;
+      controls.enabled = true;
+      renderer.domElement.releasePointerCapture(e.pointerId);
+    }
+    renderer.domElement.addEventListener('pointerup', stopDrag);
+    renderer.domElement.addEventListener('pointerleave', stopDrag);
+
+    const clock = new THREE.Clock();
+
+    function integrate(dt, time) {
+      const tmp = new THREE.Vector3();
+      const windBase = new THREE.Vector3(1, 0.14, 0.22).normalize().multiplyScalar(params.wind * 7.2);
+
+      for (let i = 0; i < pos.count; i++) {
+        let p = tmp.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+        if (invMass[i] === 0) {
+          pos.setXYZ(i, base[i].x, base[i].y, base[i].z);
+          prev[i].copy(base[i]);
+          continue;
+        }
+
+        const cur = p.clone();
+        const vel = cur.clone().sub(prev[i]).multiplyScalar(params.damping);
+        const uvx = (i % (segX + 1)) / segX;
+        const uvy = Math.floor(i / (segX + 1)) / segY;
+        const turb = Math.sin((uvx * 11.7) + time * 3.4) * Math.cos((uvy * 9.1) - time * 2.7)
+          + Math.sin((uvx * 3.3 + uvy * 4.1 + time * 5.2) * 1.7) * 0.65;
+        const wind = windBase.clone().multiplyScalar(1 + turb * params.turbulence * 0.5);
+        const acc = gravity.clone().add(wind);
+
+        const next = cur.clone().add(vel).addScaledVector(acc, dt * dt);
+        prev[i].copy(cur);
+        pos.setXYZ(i, next.x, next.y, next.z);
+      }
+
+      if (dragging && draggedIdx >= 0 && invMass[draggedIdx] > 0) {
+        const local = cloth.worldToLocal(dragPoint.clone());
+        pos.setXYZ(draggedIdx, local.x, local.y, local.z);
+        prev[draggedIdx].set(local.x, local.y, local.z);
+      }
+    }
+
+    function satisfyConstraints() {
+      const iter = 6;
+      const pa = new THREE.Vector3();
+      const pb = new THREE.Vector3();
+      const corr = new THREE.Vector3();
+
+      for (let k = 0; k < iter; k++) {
+        for (const c of constraints) {
+          pa.set(pos.getX(c.a), pos.getY(c.a), pos.getZ(c.a));
+          pb.set(pos.getX(c.b), pos.getY(c.b), pos.getZ(c.b));
+          corr.subVectors(pb, pa);
+          const len = corr.length();
+          if (len < 1e-6) continue;
+
+          const target = c.rest;
+          const stiffness = c.bend ? params.stiffness * 0.55 : params.stiffness;
+          const diff = (len - target) / len * stiffness;
+          const wa = invMass[c.a], wb = invMass[c.b];
+          const wsum = wa + wb;
+          if (wsum <= 0) continue;
+
+          if (wa > 0) {
+            const d = corr.clone().multiplyScalar(diff * (wa / wsum));
+            pa.add(d);
+            pos.setXYZ(c.a, pa.x, pa.y, pa.z);
+          }
+          if (wb > 0) {
+            const d = corr.clone().multiplyScalar(diff * (wb / wsum));
+            pb.sub(d);
+            pos.setXYZ(c.b, pb.x, pb.y, pb.z);
+          }
+        }
+      }
+    }
+
+    function tick() {
+      const dt = Math.min(1 / 30, clock.getDelta());
+      const time = clock.elapsedTime;
+
+      integrate(dt, time);
+      satisfyConstraints();
+
+      pos.needsUpdate = true;
+      clothGeo.computeVertexNormals();
+
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(tick);
+    }
+    tick();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
