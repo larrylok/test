@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,7 +14,9 @@
       --text: #eef2ff;
       --muted: #9aa3b2;
     }
-    html, body {
+
+    html,
+    body {
       width: 100%;
       height: 100%;
       margin: 0;
@@ -22,11 +25,13 @@
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
       color: var(--text);
     }
+
     #app {
       width: 100%;
       height: 100%;
       position: relative;
     }
+
     #ui {
       position: absolute;
       left: 16px;
@@ -40,16 +45,19 @@
       padding: 14px;
       z-index: 10;
     }
+
     #ui h1 {
       margin: 0 0 6px;
       font-size: 1.05rem;
       line-height: 1.2;
     }
+
     #ui p {
       margin: 0 0 12px;
       font-size: 0.86rem;
       color: var(--muted);
     }
+
     .row {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -58,16 +66,19 @@
       align-items: center;
       font-size: 0.84rem;
     }
+
     input[type="range"] {
       width: 100%;
       accent-color: var(--accent);
     }
+
     .btns {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       margin-top: 10px;
     }
+
     button {
       border: 1px solid var(--panel-border);
       border-radius: 10px;
@@ -79,7 +90,11 @@
       font-weight: 600;
       font-size: 0.82rem;
     }
-    button:hover { background: rgba(255, 255, 255, 0.13); }
+
+    button:hover {
+      background: rgba(255, 255, 255, 0.13);
+    }
+
     #hint {
       position: absolute;
       right: 16px;
@@ -93,6 +108,7 @@
       z-index: 10;
       max-width: min(380px, calc(100vw - 32px));
     }
+
     #status {
       color: #f8d7bc;
       font-size: 0.8rem;
@@ -101,6 +117,7 @@
     }
   </style>
 </head>
+
 <body>
   <div id="app"></div>
 
@@ -147,14 +164,17 @@
     app.appendChild(renderer.domElement);
 
     const camera = new THREE.PerspectiveCamera(43, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(0.1, 0.35, 1.65);
+    camera.position.set(0.1, 0.32, 1.45);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.target.set(0, 0.05, 0);
+    controls.update();
 
     const hemi = new THREE.HemisphereLight(0xbfd2ff, 0x1f2330, 0.8);
     scene.add(hemi);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.28);
+    scene.add(ambient);
     const key = new THREE.DirectionalLight(0xfff1d8, 1.4);
     key.position.set(1.4, 1.6, 1.2);
     scene.add(key);
@@ -168,6 +188,7 @@
     );
     bg.position.z = -1.8;
     scene.add(bg);
+    renderer.setClearColor(0x0c1018, 1);
 
     const clothW = 1.15;
     const clothH = 1.6;
@@ -193,6 +214,7 @@
         out.textContent = Number(el.value).toFixed(id === 'damping' ? 3 : 2);
       });
     }
+    statusEl.textContent = 'Click the scene on the right to drag the cloth. Toggle Wireframe if it is hard to see.';
 
     const textureLoader = new THREE.TextureLoader();
     const tex = textureLoader.load(
@@ -210,16 +232,26 @@
     const clothMat = new THREE.MeshPhysicalMaterial({
       map: tex,
       side: THREE.DoubleSide,
-      roughness: 0.84,
+      roughness: 0.62,
       metalness: 0.02,
       sheen: 0.45,
       clearcoat: 0.05,
       clearcoatRoughness: 0.6,
+      emissive: 0x121c2a,
+      emissiveIntensity: 0.18,
       wireframe: false,
     });
 
     const cloth = new THREE.Mesh(clothGeo, clothMat);
     cloth.position.y = 0.02;
+
+    const clothWire = new THREE.LineSegments(
+      new THREE.WireframeGeometry(clothGeo),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45 })
+    );
+    clothWire.visible = false;
+    cloth.add(clothWire);
+
     scene.add(cloth);
 
     const pos = clothGeo.attributes.position;
@@ -281,6 +313,7 @@
     document.getElementById('wireBtn').addEventListener('click', () => {
       params.wireframe = !params.wireframe;
       clothMat.wireframe = params.wireframe;
+      clothWire.visible = params.wireframe;
     });
 
     const raycaster = new THREE.Raycaster();
@@ -430,4 +463,5 @@
     });
   </script>
 </body>
+
 </html>
